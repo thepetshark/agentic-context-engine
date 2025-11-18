@@ -15,7 +15,7 @@ load_dotenv()
 
 # Import browser-use
 from ace.prompts_v2_1 import PromptManager
-from browser_use import Agent, Browser, ChatAnthropic
+from browser_use import Agent, Browser, ChatBrowserUse
 
 # Import common utilities from parent directory
 import sys
@@ -297,11 +297,9 @@ class DomainCheckEnvironment(TaskEnvironment):
                 await browser.start()
                 print(f"   ✅ Browser started successfully")
 
-                # Create agent with ChatAnthropic (will log to browser-use project via env var)
-                llm = ChatAnthropic(model=self.model, temperature=0.0)
-                print(
-                    f"   🤖 Created ChatAnthropic for browser-use project: {self.model}"
-                )
+                # Create agent with ChatBrowserUse (fine-tuned browser automation model)
+                llm = ChatBrowserUse()
+                print(f"   🤖 Created ChatBrowserUse (fine-tuned browser model)")
 
                 task = f"""
 You are a browser agent. For every step, first think, then act.

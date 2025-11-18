@@ -268,81 +268,62 @@ class ACEAgent:
         except:
             steps = 0
 
-        # Extract rich trace data
-        trace_data = {}
+        # Extract rich trace data in CHRONOLOGICAL order
+        # Use history.history to get step-by-step execution
+        trace_data: dict = {}
+        chronological_steps: list = []
 
-        # 1. Agent thoughts (reasoning at each step)
         try:
-            if hasattr(history, "model_thoughts"):
-                thoughts = history.model_thoughts()
-                if thoughts:
-                    # Keep ALL thoughts - no filtering
-                    trace_data["thoughts"] = [
-                        {
-                            "thinking": t.thinking,
-                            "evaluation": t.evaluation_previous_goal,
-                            "memory": t.memory,
-                            "next_goal": t.next_goal,
+            if hasattr(history, "history"):
+                # Iterate through each step in chronological order
+                for step_idx, step in enumerate(history.history, 1):
+                    step_data: dict = {"step_number": step_idx}
+
+                    # Extract thought from model_output
+                    if step.model_output:
+                        step_data["thought"] = {
+                            "thinking": step.model_output.thinking,
+                            "evaluation": step.model_output.evaluation_previous_goal,
+                            "memory": step.model_output.memory,
+                            "next_goal": step.model_output.next_goal,
                         }
-                        for t in thoughts
-                    ]
-        except Exception as e:
-            trace_data["thoughts_error"] = str(e)  # type: ignore[assignment]
 
-        # 2. Actions taken
-        try:
-            if hasattr(history, "model_actions"):
-                actions = history.model_actions()
-                if actions:
-                    # Keep ALL actions - no filtering
-                    trace_data["actions"] = actions
-        except Exception as e:
-            trace_data["actions_error"] = str(e)  # type: ignore[assignment]
+                        # Extract action(s) from model_output
+                        if step.model_output.action:
+                            step_data["actions"] = [
+                                {k: v for k, v in action.model_dump().items()}
+                                for action in step.model_output.action
+                            ]
 
-        # 3. URLs visited
-        try:
-            if hasattr(history, "urls"):
-                urls = history.urls()
-                trace_data["urls"] = list(filter(None, urls))  # ALL URLs
-        except Exception as e:
-            trace_data["urls_error"] = str(e)  # type: ignore[assignment]
+                    # Extract result(s)
+                    if step.result:
+                        step_data["results"] = [
+                            {
+                                "is_done": r.is_done,
+                                "success": r.success,
+                                "error": r.error,
+                                "extracted_content": r.extracted_content,
+                            }
+                            for r in step.result
+                        ]
 
-        # 4. Errors encountered
-        try:
-            if hasattr(history, "errors"):
-                errors = history.errors()
-                step_errors = [e for e in errors if e]
-                if step_errors:
-                    trace_data["step_errors"] = step_errors  # ALL errors
-        except Exception as e:
-            trace_data["errors_error"] = str(e)  # type: ignore[assignment]
+                    # Extract state (URL, etc.)
+                    if step.state:
+                        step_data["url"] = step.state.url
+                        if step.state.screenshot:
+                            step_data["has_screenshot"] = True
 
-        # 5. Action results
-        try:
-            if hasattr(history, "action_results"):
-                results = history.action_results()
-                if results:
-                    # Extract key info from ALL results - no filtering
-                    trace_data["action_results"] = [
-                        {
-                            "is_done": r.is_done,
-                            "success": r.success,
-                            "error": r.error,
-                            "extracted_content": r.extracted_content,  # Full content
-                        }
-                        for r in results
-                    ]
-        except Exception as e:
-            trace_data["action_results_error"] = str(e)  # type: ignore[assignment]
+                    chronological_steps.append(step_data)
 
-        # 6. Duration
-        try:
+                trace_data["chronological_steps"] = chronological_steps
+
+            # Also extract duration
             if hasattr(history, "total_duration_seconds"):
                 trace_data["duration_seconds"] = round(
                     history.total_duration_seconds(), 2
                 )
-        except:
-            pass
+        except Exception as e:
+            trace_data["extraction_error"] = str(e)  # type: ignore[assignment]
 
         # Build comprehensive feedback string
         feedback_parts = []
@@ -355,33 +336,6 @@ class ACEAgent:
         if "duration_seconds" in trace_data:
             feedback_parts.append(f"Duration: {trace_data['duration_seconds']}s")
 
-        # Add thought summary
-        if "thoughts" in trace_data and trace_data["thoughts"]:
-            feedback_parts.append("\nAgent Reasoning:")
-            for i, thought in enumerate(trace_data["thoughts"][:3], 1):  # First 3
-                goal = thought.get("next_goal", "")[:100]
-                if goal:
-                    feedback_parts.append(f"  Step {i}: {goal}")
-
-        # Add action summary
-        if "actions" in trace_data and trace_data["actions"]:
-            action_summary = ", ".join(
-                list(action.keys())[0] for action in trace_data["actions"][:5] if action
-            )
-            feedback_parts.append(f"\nActions taken: {action_summary}")
-
-        # Add URLs
-        if "urls" in trace_data and trace_data["urls"]:
-            feedback_parts.append(
-                f"URLs visited: {', '.join(trace_data['urls'][:3])}"  # type: ignore[arg-type]
-            )
-
-        # Add errors
-        if "step_errors" in trace_data:
-            feedback_parts.append(
-                f"\nErrors encountered: {'; '.join(trace_data['step_errors'][:2])}"  # type: ignore[arg-type]
-            )
-
         # Add final output
         if output:
             output_preview = output[:150] + ("..." if len(output) > 150 else "")
@@ -391,61 +345,55 @@ class ACEAgent:
         if error:
             feedback_parts.append(f"\nFailure reason: {error}")
 
-        # Build detailed execution logs (for Reflector analysis)
-        execution_log_parts = []
+        # Build CHRONOLOGICAL execution trace (for Reflector analysis)
+        if "chronological_steps" in trace_data and trace_data["chronological_steps"]:
+            feedback_parts.append("\n\n=== BROWSER EXECUTION TRACE (Chronological) ===")
 
-        # Add detailed thoughts
-        if "thoughts" in trace_data and trace_data["thoughts"]:
-            execution_log_parts.append("\n=== Agent Reasoning (Detailed) ===")
-            for i, thought in enumerate(trace_data["thoughts"], 1):
-                execution_log_parts.append(f"\nThought {i}:")
-                if thought.get("thinking"):
-                    execution_log_parts.append(f"  Thinking: {thought['thinking']}")
-                if thought.get("evaluation"):
-                    execution_log_parts.append(f"  Evaluation: {thought['evaluation']}")
-                if thought.get("next_goal"):
-                    execution_log_parts.append(f"  Next Goal: {thought['next_goal']}")
-                if thought.get("memory"):
-                    execution_log_parts.append(f"  Memory: {thought['memory']}")
+            for step in trace_data["chronological_steps"]:
+                step_num = step["step_number"]
+                feedback_parts.append(f"\n--- Step {step_num} ---")
 
-        # Add detailed actions
-        if "actions" in trace_data and trace_data["actions"]:
-            execution_log_parts.append("\n=== Actions Taken ===")
-            for i, action in enumerate(trace_data["actions"], 1):
-                execution_log_parts.append(f"Action {i}: {action}")
+                # 1. Thought (what the agent was thinking)
+                if "thought" in step:
+                    thought = step["thought"]
+                    if thought.get("thinking"):
+                        feedback_parts.append(f"🧠 Thinking: {thought['thinking']}")
+                    if thought.get("evaluation"):
+                        feedback_parts.append(f"   Evaluation: {thought['evaluation']}")
+                    if thought.get("memory"):
+                        feedback_parts.append(f"   Memory: {thought['memory']}")
+                    if thought.get("next_goal"):
+                        feedback_parts.append(f"   Next Goal: {thought['next_goal']}")
 
-        # Add detailed action results
-        if "action_results" in trace_data and trace_data["action_results"]:
-            execution_log_parts.append("\n=== Action Results ===")
-            for i, result in enumerate(trace_data["action_results"], 1):
-                result_parts = []
-                if "is_done" in result:
-                    result_parts.append(f"is_done={result['is_done']}")
-                if "success" in result:
-                    result_parts.append(f"success={result['success']}")
-                if result.get("error"):
-                    result_parts.append(f"error={result['error']}")
-                if result.get("extracted_content"):
-                    result_parts.append(f"content={result['extracted_content']}")
-                execution_log_parts.append(f"Result {i}: {', '.join(result_parts)}")
+                # 2. Action (what the agent did)
+                if "actions" in step:
+                    for action in step["actions"]:
+                        action_name = list(action.keys())[0] if action else "unknown"
+                        action_params = action.get(action_name, {})
+                        feedback_parts.append(
+                            f"▶️  Action: {action_name}({action_params})"
+                        )
 
-        # Add URLs (full list)
-        if "urls" in trace_data and trace_data["urls"]:
-            execution_log_parts.append("\n=== URLs Visited ===")
-            for i, url in enumerate(trace_data["urls"], 1):
-                execution_log_parts.append(f"{i}. {url}")
+                # 3. Result (what happened)
+                if "results" in step:
+                    for result in step["results"]:
+                        result_parts = []
+                        if result.get("success") is not None:
+                            result_parts.append(f"success={result['success']}")
+                        if result.get("is_done") is not None:
+                            result_parts.append(f"done={result['is_done']}")
+                        if result.get("error"):
+                            result_parts.append(f"error={result['error']}")
+                        if result.get("extracted_content"):
+                            content = str(result["extracted_content"])[:200]
+                            result_parts.append(f"content={content}...")
+                        feedback_parts.append(f"📊 Result: {', '.join(result_parts)}")
 
-        # Add errors (full list)
-        if "step_errors" in trace_data and trace_data["step_errors"]:
-            execution_log_parts.append("\n=== Errors Encountered ===")
-            for i, err in enumerate(trace_data["step_errors"], 1):
-                execution_log_parts.append(f"{i}. {err}")
+                # 4. URL (where the agent was)
+                if "url" in step:
+                    feedback_parts.append(f"🌐 URL: {step['url']}")
 
-        # Append detailed logs to feedback if available
-        if execution_log_parts:
-            feedback_parts.append("\n\n=== BROWSER EXECUTION DETAILS ===")
-            feedback_parts.extend(execution_log_parts)
-            feedback_parts.append("\n=== END EXECUTION DETAILS ===")
+            feedback_parts.append("\n=== END EXECUTION TRACE ===")
 
         return {
             "feedback": "\n".join(feedback_parts),

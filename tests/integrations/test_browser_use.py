@@ -285,97 +285,167 @@ class TestRichFeedbackBuilder:
         assert "5 steps" in result["feedback"]
 
     def test_build_rich_feedback_extracts_urls(self):
-        """Should extract URLs from history."""
+        """Should extract URLs from chronological steps."""
         from browser_use import ChatBrowserUse
         from unittest.mock import MagicMock
 
         agent = ACEAgent(llm=ChatBrowserUse())
 
-        # Mock history with URLs
-        mock_history = MagicMock()
-        mock_history.final_result.return_value = "Output"
-        mock_history.number_of_steps.return_value = 3
-        mock_history.urls.return_value = [
-            "https://example.com",
-            "https://test.com",
-            None,
-        ]
+        # Mock history with chronological steps containing URLs
+        mock_step1 = MagicMock()
+        mock_step1.model_output = None
+        mock_step1.result = None
+        mock_step1.state = MagicMock()
+        mock_step1.state.url = "https://example.com"
+        mock_step1.state.screenshot = None
 
-        result = agent._build_rich_feedback(mock_history, success=True)
-
-        assert "urls" in result["raw_trace"]
-        assert "https://example.com" in result["raw_trace"]["urls"]
-        assert "https://test.com" in result["raw_trace"]["urls"]
-        assert "URLs visited" in result["feedback"]
-
-    def test_build_rich_feedback_extracts_errors(self):
-        """Should extract step errors from history."""
-        from browser_use import ChatBrowserUse
-        from unittest.mock import MagicMock
-
-        agent = ACEAgent(llm=ChatBrowserUse())
-
-        # Mock history with errors
-        mock_history = MagicMock()
-        mock_history.final_result.return_value = "Output"
-        mock_history.number_of_steps.return_value = 3
-        mock_history.errors.return_value = [None, "Click failed", "Element not found"]
-
-        result = agent._build_rich_feedback(mock_history, success=False, error="Failed")
-
-        assert "step_errors" in result["raw_trace"]
-        assert "Click failed" in result["raw_trace"]["step_errors"]
-        assert "Errors encountered" in result["feedback"]
-
-    def test_build_rich_feedback_extracts_actions(self):
-        """Should extract actions from history."""
-        from browser_use import ChatBrowserUse
-        from unittest.mock import MagicMock
-
-        agent = ACEAgent(llm=ChatBrowserUse())
-
-        # Mock history with actions
-        mock_history = MagicMock()
-        mock_history.final_result.return_value = "Output"
-        mock_history.number_of_steps.return_value = 3
-        mock_history.model_actions.return_value = [
-            {"goto": {"url": "https://example.com"}},
-            {"click": {"index": 5}},
-            {"extract": {"data": "text"}},
-        ]
-
-        result = agent._build_rich_feedback(mock_history, success=True)
-
-        assert "actions" in result["raw_trace"]
-        assert len(result["raw_trace"]["actions"]) == 3
-        assert "Actions taken" in result["feedback"]
-        assert "goto" in result["feedback"]
-
-    def test_build_rich_feedback_extracts_thoughts(self):
-        """Should extract agent thoughts from history."""
-        from browser_use import ChatBrowserUse
-        from unittest.mock import MagicMock
-
-        agent = ACEAgent(llm=ChatBrowserUse())
-
-        # Mock history with thoughts
-        mock_thought = MagicMock()
-        mock_thought.thinking = "Planning to search"
-        mock_thought.evaluation_previous_goal = "Navigated successfully"
-        mock_thought.memory = "On homepage"
-        mock_thought.next_goal = "Search for product"
+        mock_step2 = MagicMock()
+        mock_step2.model_output = None
+        mock_step2.result = None
+        mock_step2.state = MagicMock()
+        mock_step2.state.url = "https://test.com"
+        mock_step2.state.screenshot = None
 
         mock_history = MagicMock()
         mock_history.final_result.return_value = "Output"
         mock_history.number_of_steps.return_value = 2
-        mock_history.model_thoughts.return_value = [mock_thought]
+        mock_history.history = [mock_step1, mock_step2]
 
         result = agent._build_rich_feedback(mock_history, success=True)
 
-        assert "thoughts" in result["raw_trace"]
-        assert len(result["raw_trace"]["thoughts"]) == 1
-        assert result["raw_trace"]["thoughts"][0]["next_goal"] == "Search for product"
-        assert "Agent Reasoning" in result["feedback"]
+        assert "chronological_steps" in result["raw_trace"]
+        assert len(result["raw_trace"]["chronological_steps"]) == 2
+        assert (
+            result["raw_trace"]["chronological_steps"][0]["url"]
+            == "https://example.com"
+        )
+        assert (
+            result["raw_trace"]["chronological_steps"][1]["url"] == "https://test.com"
+        )
+        assert "https://example.com" in result["feedback"]
+
+    def test_build_rich_feedback_extracts_errors(self):
+        """Should extract step errors from chronological results."""
+        from browser_use import ChatBrowserUse
+        from unittest.mock import MagicMock
+
+        agent = ACEAgent(llm=ChatBrowserUse())
+
+        # Mock history with errors in results
+        mock_result1 = MagicMock()
+        mock_result1.is_done = False
+        mock_result1.success = False
+        mock_result1.error = "Click failed"
+        mock_result1.extracted_content = None
+
+        mock_step = MagicMock()
+        mock_step.model_output = None
+        mock_step.result = [mock_result1]
+        mock_step.state = None
+
+        mock_history = MagicMock()
+        mock_history.final_result.return_value = "Output"
+        mock_history.number_of_steps.return_value = 1
+        mock_history.history = [mock_step]
+
+        result = agent._build_rich_feedback(mock_history, success=False, error="Failed")
+
+        assert "chronological_steps" in result["raw_trace"]
+        assert len(result["raw_trace"]["chronological_steps"]) == 1
+        assert (
+            result["raw_trace"]["chronological_steps"][0]["results"][0]["error"]
+            == "Click failed"
+        )
+        assert "Click failed" in result["feedback"]
+
+    def test_build_rich_feedback_extracts_actions(self):
+        """Should extract actions from chronological steps."""
+        from browser_use import ChatBrowserUse
+        from unittest.mock import MagicMock
+
+        agent = ACEAgent(llm=ChatBrowserUse())
+
+        # Mock action objects
+        mock_action1 = MagicMock()
+        mock_action1.model_dump.return_value = {"goto": {"url": "https://example.com"}}
+
+        mock_action2 = MagicMock()
+        mock_action2.model_dump.return_value = {"click": {"index": 5}}
+
+        # Mock model outputs with actions
+        mock_output1 = MagicMock()
+        mock_output1.thinking = None
+        mock_output1.evaluation_previous_goal = None
+        mock_output1.memory = None
+        mock_output1.next_goal = None
+        mock_output1.action = [mock_action1]
+
+        mock_output2 = MagicMock()
+        mock_output2.thinking = None
+        mock_output2.evaluation_previous_goal = None
+        mock_output2.memory = None
+        mock_output2.next_goal = None
+        mock_output2.action = [mock_action2]
+
+        # Mock steps
+        mock_step1 = MagicMock()
+        mock_step1.model_output = mock_output1
+        mock_step1.result = None
+        mock_step1.state = None
+
+        mock_step2 = MagicMock()
+        mock_step2.model_output = mock_output2
+        mock_step2.result = None
+        mock_step2.state = None
+
+        mock_history = MagicMock()
+        mock_history.final_result.return_value = "Output"
+        mock_history.number_of_steps.return_value = 2
+        mock_history.history = [mock_step1, mock_step2]
+
+        result = agent._build_rich_feedback(mock_history, success=True)
+
+        assert "chronological_steps" in result["raw_trace"]
+        assert len(result["raw_trace"]["chronological_steps"]) == 2
+        assert "goto" in str(result["raw_trace"]["chronological_steps"][0]["actions"])
+        assert "click" in str(result["raw_trace"]["chronological_steps"][1]["actions"])
+        assert "goto" in result["feedback"]
+
+    def test_build_rich_feedback_extracts_thoughts(self):
+        """Should extract agent thoughts from chronological steps."""
+        from browser_use import ChatBrowserUse
+        from unittest.mock import MagicMock
+
+        agent = ACEAgent(llm=ChatBrowserUse())
+
+        # Mock model output with thought
+        mock_output = MagicMock()
+        mock_output.thinking = "Planning to search"
+        mock_output.evaluation_previous_goal = "Navigated successfully"
+        mock_output.memory = "On homepage"
+        mock_output.next_goal = "Search for product"
+        mock_output.action = None
+
+        # Mock step
+        mock_step = MagicMock()
+        mock_step.model_output = mock_output
+        mock_step.result = None
+        mock_step.state = None
+
+        mock_history = MagicMock()
+        mock_history.final_result.return_value = "Output"
+        mock_history.number_of_steps.return_value = 1
+        mock_history.history = [mock_step]
+
+        result = agent._build_rich_feedback(mock_history, success=True)
+
+        assert "chronological_steps" in result["raw_trace"]
+        assert len(result["raw_trace"]["chronological_steps"]) == 1
+        assert (
+            result["raw_trace"]["chronological_steps"][0]["thought"]["next_goal"]
+            == "Search for product"
+        )
+        assert "Planning to search" in result["feedback"]
 
     def test_build_rich_feedback_handles_exceptions(self):
         """Should handle exceptions when extracting trace data."""
@@ -388,14 +458,15 @@ class TestRichFeedbackBuilder:
         mock_history = MagicMock()
         mock_history.final_result.return_value = "Output"
         mock_history.number_of_steps.return_value = 2
-        mock_history.urls.side_effect = Exception("URL error")
-        mock_history.errors.side_effect = Exception("Error extraction failed")
+        mock_history.history = MagicMock()
+        mock_history.history.__iter__.side_effect = Exception(
+            "History extraction failed"
+        )
 
         result = agent._build_rich_feedback(mock_history, success=True)
 
-        # Should still return valid result with error indicators
-        assert "urls_error" in result["raw_trace"]
-        assert "errors_error" in result["raw_trace"]
+        # Should still return valid result with error indicator
+        assert "extraction_error" in result["raw_trace"]
         assert result["feedback"]  # Should still have feedback
 
 
