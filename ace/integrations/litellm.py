@@ -39,12 +39,15 @@ Example:
     agent = ACELiteLLM(model="gpt-4o-mini", playbook_path="my_agent.json")
 """
 
-from typing import List, Optional, Dict, Any
+from typing import TYPE_CHECKING, List, Optional, Dict, Any
 
 from ..playbook import Playbook
 from ..roles import Generator, Reflector, Curator
 from ..adaptation import OfflineAdapter, Sample, TaskEnvironment
 from ..prompts_v2_1 import PromptManager
+
+if TYPE_CHECKING:
+    from ..deduplication import DeduplicationConfig
 
 
 class ACELiteLLM:
@@ -96,6 +99,7 @@ class ACELiteLLM:
         temperature: float = 0.0,
         playbook_path: Optional[str] = None,
         is_learning: bool = True,
+        dedup_config: Optional["DeduplicationConfig"] = None,
     ):
         """
         Initialize ACELiteLLM agent.
@@ -107,6 +111,7 @@ class ACELiteLLM:
             temperature: Sampling temperature (default: 0.0)
             playbook_path: Path to existing playbook (optional)
             is_learning: Enable/disable learning (default: True)
+            dedup_config: Optional DeduplicationConfig for bullet deduplication
 
         Raises:
             ImportError: If LiteLLM is not installed
@@ -126,6 +131,13 @@ class ACELiteLLM:
                 model="gpt-4o-mini",
                 playbook_path="expert.json"
             )
+
+            # With deduplication
+            from ace import DeduplicationConfig
+            agent = ACELiteLLM(
+                model="gpt-4o-mini",
+                dedup_config=DeduplicationConfig(similarity_threshold=0.85)
+            )
         """
         # Import LiteLLM (required for this integration)
         try:
@@ -139,6 +151,7 @@ class ACELiteLLM:
 
         self.model = model
         self.is_learning = is_learning
+        self.dedup_config = dedup_config
 
         # Load or create playbook
         if playbook_path:
@@ -259,6 +272,7 @@ class ACELiteLLM:
             curator=self.curator,
             async_learning=async_learning,
             max_reflector_workers=max_reflector_workers,
+            dedup_config=self.dedup_config,
         )
 
         # Run learning

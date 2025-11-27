@@ -20,7 +20,7 @@ Example:
 """
 
 import asyncio
-from typing import Optional, Any, Callable, Dict, List
+from typing import TYPE_CHECKING, Optional, Any, Callable, Dict, List
 from pathlib import Path
 
 try:
@@ -37,6 +37,9 @@ from ..playbook import Playbook
 from ..roles import Reflector, Curator, GeneratorOutput
 from ..prompts_v2_1 import PromptManager
 from .base import wrap_playbook_context
+
+if TYPE_CHECKING:
+    from ..deduplication import DeduplicationConfig
 
 
 class ACEAgent:
@@ -95,6 +98,7 @@ class ACEAgent:
         playbook_path: Optional[str] = None,
         is_learning: bool = True,
         async_learning: bool = False,
+        dedup_config: Optional["DeduplicationConfig"] = None,
         **agent_kwargs,
     ):
         """
@@ -115,6 +119,7 @@ class ACEAgent:
             is_learning: Enable/disable ACE learning
             async_learning: If True, learning happens in background (non-blocking).
                 Use wait_for_learning() before saving playbook.
+            dedup_config: Optional DeduplicationConfig for bullet deduplication
             **agent_kwargs: Additional browser-use Agent parameters
                 (max_steps, use_vision, step_timeout, max_failures, etc.)
         """
@@ -155,8 +160,18 @@ class ACEAgent:
         self.reflector = Reflector(
             self.ace_llm, prompt_template=prompt_mgr.get_reflector_prompt()
         )
+
+        # Create DeduplicationManager if config provided
+        dedup_manager = None
+        if dedup_config is not None:
+            from ..deduplication import DeduplicationManager
+
+            dedup_manager = DeduplicationManager(dedup_config)
+
         self.curator = Curator(
-            self.ace_llm, prompt_template=prompt_mgr.get_curator_prompt()
+            self.ace_llm,
+            prompt_template=prompt_mgr.get_curator_prompt(),
+            dedup_manager=dedup_manager,
         )
 
     async def run(

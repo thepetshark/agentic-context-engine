@@ -140,6 +140,7 @@ ACE enables agents to learn from execution feedback: what works, what doesn't, a
 - ⚡ **Async Learning**: Generator responds instantly while learning happens in background
 - 🚀 **100+ LLM Providers**: Works with OpenAI, Anthropic, Google, and more
 - 📊 **Production Observability**: Built-in Opik integration for enterprise monitoring
+- 🔄 **Smart Deduplication**: Automatically consolidates similar strategies
 
 ---
 
