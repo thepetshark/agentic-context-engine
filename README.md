@@ -146,19 +146,6 @@ agent = ACEClaudeCode(working_dir="./project", skillbook_path="coding_expert.jso
 **Features:** Claude Code CLI wrapper, automatic learning, task execution traces
 **[→ Claude Code Loop Example](examples/claude-code-loop/)**
 
-### **ACELangChain** - Complex Workflows ⛓️
-
-Wrap any LangChain chain/agent with learning:
-
-```python
-from ace import ACELangChain
-
-ace_chain = ACELangChain(runnable=your_langchain_chain)
-result = ace_chain.invoke({"question": "Your task"})  # Learns automatically
-```
-
-**Best for:** Multi-step workflows, tool-using agents
-
 **[→ Integration Guide](docs/INTEGRATION_GUIDE.md)** | **[→ Examples](examples/)**
 
 ---
